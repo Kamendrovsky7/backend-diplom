@@ -37,19 +37,27 @@
 `source .venv/bin/activate`
 
 Установите зависимости:
+
 `pip install -r requirements.txt>`
 
 Склонируйте переменные окружения
 
 Создайте базу данных (sqlit3 создается автоматически)
+
 `psql -U postgres -c "CREATE DATABASE your_db"`
 
 Запустите миграции:
+
 `python manage.py migrate`
+
 Загрузите тестовые данные (при наличии):
+
 `python manage.py loaddata initial_data.yaml`
+
 Запустите сервер разработки:
+
 `python manage.py runserver`
+
 Доступ по адресу: **http://localhost:8000/**.
 
 **Основные API включают:**
