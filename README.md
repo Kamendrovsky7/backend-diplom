@@ -33,6 +33,7 @@
 `.venv\Scripts\activate.bat`
 
 **Linux/Mac**
+
 `python -m venv .venv`----->
 `source .venv/bin/activate`
 
