@@ -52,7 +52,7 @@
 
 Загрузите тестовые данные (при наличии):
 
-`python manage.py loaddata initial_data.yaml`
+`python manage.py loaddata data.yaml`
 
 Запустите сервер разработки:
 
