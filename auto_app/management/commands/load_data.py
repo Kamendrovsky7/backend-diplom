@@ -13,10 +13,11 @@ from auto_app.models import (
 
 class Command(BaseCommand):
     help = "Загружает данные из YML файла в базу данных"
-
+    # Добавления аргумента, чтобы можно было указать путь к YAML файлу при загрузке команды.
     def add_arguments(self, parser):
         parser.add_argument("yaml_file", type=str, help="Путь к YML файлу с данными")
 
+    # Главная функция команды. Открывает YAML, читает данные и запускает загрузку в БД.
     def handle(self, *args, **options):
         yaml_file_path = options["yaml_file"]
         self.stdout.write(f"Загрузку данных из файла: {yaml_file_path}")
@@ -42,6 +43,7 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS("Загрузка данных успешна."))
 
+    # Обработка поставщика. Если его нет в базе, то создаётся новый.
     def _process_supplier(self, data):
         shop_name = data.get("shop")
         if not shop_name:
@@ -71,6 +73,7 @@ class Command(BaseCommand):
             )
             raise CommandError("Ошибка обработки данных поставщика.")
 
+    # Загрузка списка категорий из файла и добавление их в БД, если таковых не имеется.
     def _process_categories(self, data):
         categories_data = data.get("categories", [])
         self.stdout.write(f"Найдено {len(categories_data)} категорий для загрузки.")
@@ -98,6 +101,7 @@ class Command(BaseCommand):
                     )
                 )
 
+    # Поиск товаров, создание или обновление их в БД, добавление параметров к каждому товару.
     def _process_products(self, data):
         products_data = data.get("goods", [])
         self.stdout.write(f"Найдено {len(products_data)} товаров для загрузки.")
