@@ -38,11 +38,11 @@
 
 Установите зависимости:
 
-`pip install -r requirements.txt>`
+`pip install -r requirements.txt`
 
 Склонируйте переменные окружения
 
-Создайте базу данных (sqlit3 создается автоматически)
+Создайте базу данных (sqlite3 создается автоматически)
 
 `psql -U postgres -c "CREATE DATABASE your_db"`
 
