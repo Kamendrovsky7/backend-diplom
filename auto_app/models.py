@@ -2,6 +2,8 @@ from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
+from datetime import timedelta
+import uuid
 
 
 class Supplier(models.Model):
@@ -121,6 +123,33 @@ class Customer(models.Model):
         verbose_name_plural = _("Customers")
 
 
+class EmailVerification(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="email_verification"
+    )
+    token = models.UUIDField(default=uuid.uuid4, unique=True)
+    is_verified = models.BooleanField(default=False)
+
+
+class PasswordResetToken(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="password_reset_tokens"
+    )
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_used = models.BooleanField(default=False)
+
+    def is_expired(self):
+        return timezone.now() > self.created_at + timedelta(hours=24)
+
+    def __str__(self):
+        return f"Reset token for {self.user.email}"
+
+
 class Order(models.Model):
     STATUS_CHOICES = [
         ("new", _("New")),
@@ -175,22 +204,16 @@ class Order(models.Model):
 
 
 class OrderItem(models.Model):
-    order = models.ForeignKey(
-        Order, on_delete=models.CASCADE, related_name="items", verbose_name=_("Order")
+    supplier_order = models.ForeignKey(
+        "SupplierOrder",
+        on_delete=models.CASCADE,
+        null=True,
+        related_name="items"
     )
     product = models.ForeignKey(
-        Product,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="order_items",
-        verbose_name=_("Product"),
-    )
-    product_name = models.CharField(
-        max_length=255, verbose_name=_("Product Name"), default="Unknown Product"
-    )
-    supplier_name = models.CharField(
-        max_length=255, verbose_name=_("Supplier Name"), default="Unknown Supplier"
+        "Product",
+        on_delete=models.CASCADE,
+        null=True
     )
     price = models.DecimalField(
         max_digits=10, decimal_places=2, verbose_name=_("Price"), default=0.00
@@ -198,7 +221,7 @@ class OrderItem(models.Model):
     quantity = models.PositiveIntegerField(default=1, verbose_name=_("Quantity"))
 
     def __str__(self):
-        return f"{self.quantity} x {self.product_name} (Order #{self.order.id})"
+        return f"{self.quantity} x {self.product} (Order #{self.supplier_order})"
 
     class Meta:
         verbose_name = _("Order Item")
@@ -206,6 +229,24 @@ class OrderItem(models.Model):
 
     def get_item_total(self):
         return self.price * self.quantity
+
+
+class SupplierOrder(models.Model):
+    order = models.ForeignKey(
+        "Order",
+        on_delete=models.CASCADE,
+        related_name="supplier_orders"
+    )
+    supplier = models.ForeignKey(
+        "Supplier",
+        on_delete=models.CASCADE,
+        related_name="supplier_orders"
+    )
+    status = models.CharField(max_length=50, default="created")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"SupplierOrder #{self.id} - {self.supplier.name}"
 
 
 class Cart(models.Model):
@@ -231,6 +272,7 @@ class Cart(models.Model):
 
 
 class CartItem(models.Model):
+
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(
         Product, on_delete=models.CASCADE, related_name="cart_items"

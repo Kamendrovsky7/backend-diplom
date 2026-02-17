@@ -1,15 +1,10 @@
 import pytest
 from decimal import Decimal
-from django.test import TestCase, Client
+from django.test import TestCase
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase, APIClient
 from django.urls import reverse
 from auto_app.models import Product, Category, Cart, CartItem, Order, Customer
-from auto_app.api.serializers import (
-    CartItemSerializer,
-    OrderSerializer,
-    ProductSerializer,
-)
 
 
 @pytest.mark.django_db
@@ -63,9 +58,9 @@ class APITests(APITestCase):
             email="api_test@example.com",
             password="password_api",
         )
-        token_response = self.client.post(
-            reverse("login"), {"username": "testuser_api", "password": "password_api"}
-        )
+#  token_response = self.client.post(
+#     reverse("login"), {"username": "testuser_api", "password": "password_api"}
+#  )
         self.client.force_authenticate(user=self.user)
         self.category = Category.objects.create(
             name="Test API Category", external_id=456

@@ -5,26 +5,36 @@ from auto_app.models import (
     Category,
     Cart,
     CartItem,
-    Customer,
     Order,
     OrderItem,
+    SupplierOrder,
+    ProductAttributeValue,
 )
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from auto_app.utils import send_order_confirmation
+from collections import defaultdict
+
 
 User = get_user_model()
 
 
+class ProductAttributeValueSerializer(serializers.ModelSerializer):
+    attribute_name = serializers.CharField(source="attribute.name", read_only=True)
+
+    class Meta:
+        model = ProductAttributeValue
+        fields = ["attribute_name", "value"]
+
+
 class ProductSerializer(serializers.ModelSerializer):
+    attributes = ProductAttributeValueSerializer(
+        source="attribute_values",
+        many=True,
+        read_only=True
+    )
+
     class Meta:
         model = Product
-        fields = "__all__"
-
-
-class SupplierSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Supplier
         fields = "__all__"
 
 
@@ -138,132 +148,70 @@ class CartSerializer(serializers.ModelSerializer):
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
-    product_name = serializers.CharField(read_only=True, required=False)
-    supplier_name = serializers.CharField(read_only=True, required=False)
-    price = serializers.DecimalField(
-        max_digits=10, decimal_places=2, read_only=True, required=False
-    )
-    quantity = serializers.IntegerField(read_only=True, required=False)
-
     class Meta:
         model = OrderItem
-        fields = [
-            "id",
-            "product_name",
-            "supplier_name",
-            "price",
-            "quantity",
-        ]
+        fields = "__all__"
+
+
+class SupplierOrderSerializer(serializers.ModelSerializer):
+    items = OrderItemSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = SupplierOrder
+        fields = "__all__"
 
 
 class OrderSerializer(serializers.ModelSerializer):
-    items = OrderItemSerializer(many=True, read_only=True)
-    cart_id = serializers.IntegerField(write_only=True, required=True)
+    items = OrderItemSerializer(many=True)
+    supplier_orders = SupplierOrderSerializer(many=True, read_only=True)
 
     class Meta:
-        model = Order
-        fields = [
-            "id",
-            "user",
-            "customer",
-            "created_at",
-            "updated_at",
-            "total_amount",
-            "status",
-            "shipping_address",
-            "phone_number",
-            "items",
-            "cart_id",
-        ]
-        read_only_fields = [
-            "user",
-            "customer",
-            "created_at",
-            "updated_at",
-            "total_amount",
-            "status",
-            "items",
-        ]
+        model = SupplierOrder
+        fields = "__all__"
 
     @transaction.atomic
     def create(self, validated_data):
-        request = self.context.get("request")
-        cart_id_for_lookup = validated_data.pop("cart_id", None)
+        items_data = validated_data.pop("items")
+        user = self.context["request"].user
 
-        if not request or not request.user.is_authenticated:
-            raise serializers.ValidationError(
-                {"detail": "Authentication credentials were not provided."}
+        order = Order.objects.create(user=user, **validated_data)
+
+        supplier_groups = defaultdict(list)
+
+        for item in items_data:
+            product = item["product"]
+            supplier = product.supplier
+
+            supplier_groups[supplier].append(item)
+
+        for supplier, items in supplier_groups.items():
+            supplier_order = SupplierOrder.objects.create(
+                order=order,
+                supplier=supplier,
+                status="created"
             )
 
-        if not cart_id_for_lookup:
-            raise serializers.ValidationError({"cart_id": "ID корзины обязателен."})
-
-        try:
-            cart = Cart.objects.get(id=cart_id_for_lookup, user=request.user)
-        except Cart.DoesNotExist:
-            raise serializers.ValidationError(
-                {"detail": "Cart not found or does not belong to the user."}
-            )
-
-        try:
-            customer = Customer.objects.get(user=request.user)
-        except Customer.DoesNotExist:
-            transaction.set_rollback(True)
-            raise serializers.ValidationError(
-                {"detail": "Customer profile not found for this user."}
-            )
-
-        shipping_address = validated_data.get("shipping_address", customer.address)
-        phone_number = validated_data.get("phone_number", customer.phone_number)
-
-        order = Order.objects.create(
-            user=request.user,
-            customer=customer,
-            shipping_address=shipping_address,
-            phone_number=phone_number,
-            status="new",
-        )
-
-        total_order_amount = 0
-        cart_items = CartItem.objects.filter(cart=cart)
-        if not cart_items:
-            transaction.set_rollback(True)
-            raise serializers.ValidationError(
-                {"detail": "Cannot create order from an empty cart."}
-            )
-
-        for item in cart_items:
-            if item.product:
-                order_item = OrderItem.objects.create(
-                    order=order,
-                    product=item.product,
-                    product_name=item.product.name,
-                    supplier_name=(
-                        item.product.supplier.name
-                        if item.product.supplier
-                        else "Unknown Supplier"
-                    ),
-                    price=item.product.price,
-                    quantity=item.quantity,
+            for item in items:
+                OrderItem.objects.create(
+                    supplier_order=supplier_order,
+                    product=item["product"],
+                    quantity=item["quantity"],
+                    price=item["product"].price
                 )
-                total_order_amount += order_item.get_item_total()
-            else:
-                transaction.set_rollback(True)
-                raise serializers.ValidationError(
-                    {
-                        "detail": f"Cart item {item.id} refers to a product that no longer exists."
-                    }
-                )
-
-        order.total_amount = total_order_amount
-        order.save()
-
-        cart_items.delete()
-        cart.delete()
-
-        try:
-            send_order_confirmation(order)
-        except Exception as e:
-            pass
 
         return order
+
+
+class SupplierSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Supplier
+        fields = "__all__"
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    token = serializers.UUIDField()
+    new_password = serializers.CharField(min_length=6)

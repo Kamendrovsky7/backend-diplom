@@ -1,7 +1,6 @@
 import yaml
 from django.core.management.base import BaseCommand, CommandError
 from django.db import IntegrityError, transaction
-from django.apps import apps
 from auto_app.models import (
     Supplier,
     Category,
@@ -14,6 +13,7 @@ from auto_app.models import (
 class Command(BaseCommand):
     help = "Загружает данные из YML файла в базу данных"
     # Добавления аргумента, чтобы можно было указать путь к YAML файлу при загрузке команды.
+
     def add_arguments(self, parser):
         parser.add_argument("yaml_file", type=str, help="Путь к YML файлу с данными")
 

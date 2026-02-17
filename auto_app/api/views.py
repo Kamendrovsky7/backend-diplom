@@ -4,8 +4,12 @@ from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action
 from django.contrib.auth import get_user_model
+from django.contrib.auth.tokens import default_token_generator
 from django.shortcuts import get_object_or_404
+from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
 from django.db import transaction
 
 from auto_app.models import (
@@ -16,7 +20,7 @@ from auto_app.models import (
     CartItem,
     Customer,
     Order,
-    OrderItem,
+    PasswordResetToken
 )
 
 from .serializers import (
@@ -28,10 +32,12 @@ from .serializers import (
     CartSerializer,
     CartItemSerializer,
     OrderSerializer,
-    OrderItemSerializer,
+    PasswordResetRequestSerializer,
+    PasswordResetConfirmSerializer
 )
 
 from auto_app.utils import send_registration_confirmation, send_order_confirmation
+
 
 User = get_user_model()
 
@@ -85,6 +91,107 @@ class LoginView(ObtainAuthToken):
             "token": token.key,
         }
         return Response(response_data)
+
+
+class PasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "Пользователь с таким email не найден"},
+                status=400
+            )
+
+        reset_token = PasswordResetToken.objects.create(user=user)
+
+        print(f"Reset token: {reset_token.token}")
+
+        return Response(
+            {"detail": "Инструкция по восстановлению отправлена на email"}
+        )
+
+
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        token = serializer.validated_data["token"]
+        new_password = serializer.validated_data["new_password"]
+
+        try:
+            reset_token = PasswordResetToken.objects.get(token=token)
+        except PasswordResetToken.DoesNotExist:
+            return Response(
+                {"detail": "Неверный токен"},
+                status=400
+            )
+
+        if reset_token.is_used:
+            return Response(
+                {"detail": "Токен уже использован"},
+                status=400
+            )
+
+        if reset_token.is_expired():
+            return Response(
+                {"detail": "Токен не действителен"},
+                status=400
+            )
+
+        user = reset_token.user
+        user.set_password(new_password)
+        user.save()
+
+        reset_token.is_used = True
+        reset_token.save()
+
+        return Response(
+            {"detail": "Пароль успешно изменён"}
+        )
+
+
+class ConfirmEmailView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        uid = request.query_params.get("uid")
+        token = request.query_params.get("token")
+
+        if not uid or not token:
+            return Response(
+                {"detail": "Недостаточно данных."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user_id = urlsafe_base64_decode(uid).decode()
+            user = User.objects.get(pk=user_id)
+        except Exception:
+            return Response(
+                {"detail": "Неверная ссылка."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if default_token_generator.check_token(user, token):
+            user.is_active = True
+            user.save()
+            return Response({"detail": "Email подтвержден."})
+        else:
+            return Response(
+                {"detail": "Ссылка недействительна или устарела."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 class CartDetailView(generics.RetrieveAPIView):
@@ -208,9 +315,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         response_data = self.get_serializer(order).data
         return Response(response_data, status=status.HTTP_201_CREATED)
 
-    @action(
-        detail=True, methods=["patch"], permission_classes=[permissions.IsAdminUser]
-    )
+    @action(detail=True, methods=["patch"], permission_classes=[permissions.IsAdminUser])
     def confirm_order(self, request, pk=None):
         order = self.get_object()
         new_status = request.data.get("status")
@@ -263,3 +368,15 @@ class SupplierViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Supplier.objects.all()
     serializer_class = SupplierSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+
+class BulkPriceUpdateView(generics.GenericAPIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request):
+        for item in request.data:
+            product = Product.objects.filter(id=item["product_id"]).first()
+            if product:
+                product.price = item["price"]
+                product.save()
+        return Response({"detail": "Цена обновлена"})

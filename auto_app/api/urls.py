@@ -16,4 +16,8 @@ urlpatterns = [
     path("register/", views.RegisterView.as_view(), name="register"),
     path("login/", views.LoginView.as_view(), name="login"),
     path("cart/", views.CartDetailView.as_view(), name="cart-detail"),
+    path("auth/password-reset/", views.PasswordResetRequestView.as_view(), name="password-reset"),
+    path("auth/email-confirm/", views.ConfirmEmailView.as_view(), name='email-confirmation'),
+    path("auth/password-reset-confirm/", views.PasswordResetConfirmView.as_view(), name='password-confirm'),
+    path("products/bulk-update/", views.BulkPriceUpdateView.as_view(), name='bulk-update'),
 ]
